@@ -1,5 +1,13 @@
 from load_data import load_candles, compute_spread_zscore
-from mdp import InventoryMDPConfig, build_mdp_from_series_inv, value_iteration, backtest_inv, action_to_delta, state_index_to_name_inv
+from mdp import (
+    InventoryMDPConfig,
+    build_mdp_from_series_inv,
+    value_iteration,
+    backtest_inv,
+    action_to_delta,
+    state_index_to_name_inv,
+    plot_policy_heatmap_inv,
+)
 
 def main_inv(
     lookback: int = 24 * 30,
@@ -38,6 +46,8 @@ def main_inv(
         state_name = state_index_to_name_inv(s, config.n_z_bins, config.Q)
         delta = action_to_delta(policy[s], config.Q)
         print(f"  {state_name} (s={s}) -> Δ={delta} (V={V[s]:.4f})")
+
+    plot_policy_heatmap_inv(policy, config, save_path="policy_heatmap_inv.png")
 
     print("\nBacktesting (inventory)...")
     bt = backtest_inv(candles, z, policy, config)

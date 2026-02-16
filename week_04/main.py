@@ -7,6 +7,7 @@ from mdp import (
     Action,
     state_index_to_name,
     state_index_to_position,
+    plot_policy_heatmap,
 )
 
 def main(
@@ -36,6 +37,8 @@ def main(
         pos = state_index_to_position(s)
         next_pos = act.next_position(pos)
         print(f"  {state_name} (s={s}) -> {act.name} (position {pos} -> {next_pos}, V={V[s]:.4f})")
+
+    plot_policy_heatmap(policy, config, save_path="policy_heatmap.png")
 
     print("\nBacktesting...")
     bt = backtest(candles, z, policy, config)

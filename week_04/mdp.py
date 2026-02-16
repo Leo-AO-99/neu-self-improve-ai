@@ -209,6 +209,85 @@ def backtest(
     return result
 
 
+def plot_policy_heatmap(
+    policy: np.ndarray,
+    config: MDPConfig,
+    save_path: Optional[str] = "policy_heatmap.png",
+) -> None:
+    """Heatmap: rows = z_bin (spread state), cols = position (SHORT/FLAT/LONG), color = action."""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib not installed, skip policy heatmap")
+        return
+    n_z_bins = config.n_z_bins
+    # policy[s] -> action index; s = z_bin * 3 + (position + 1)
+    mat = np.zeros((n_z_bins, N_POSITIONS), dtype=int)
+    for z_bin in range(n_z_bins):
+        for pos in (-1, 0, 1):
+            s = make_state_index(z_bin, pos, n_z_bins)
+            mat[z_bin, pos + 1] = policy[s]
+    fig, ax = plt.subplots(figsize=(4, 5))
+    im = ax.imshow(mat, aspect="auto", cmap="tab10", vmin=0, vmax=9)
+    ax.set_yticks(range(n_z_bins))
+    ax.set_yticklabels([SpreadState.z_bin_to_name(i, n_z_bins) for i in range(n_z_bins)], fontsize=8)
+    ax.set_xticks(range(N_POSITIONS))
+    ax.set_xticklabels(["SHORT", "FLAT", "LONG"])
+    ax.set_xlabel("Position")
+    ax.set_ylabel("Spread (z_bin)")
+    cbar = plt.colorbar(im, ax=ax, ticks=[0, 1, 2, 3])
+    cbar.ax.set_yticklabels([Action(i).name for i in range(4)])
+    plt.title("Policy heatmap (action by state)")
+    for i in range(n_z_bins):
+        for j in range(N_POSITIONS):
+            ax.text(j, i, Action(mat[i, j]).name[:4], ha="center", va="center", fontsize=7)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=120)
+        print(f"Policy heatmap saved to {save_path}")
+    plt.show()
+
+
+def plot_policy_heatmap_inv(
+    policy: np.ndarray,
+    config: "InventoryMDPConfig",
+    save_path: Optional[str] = "policy_heatmap_inv.png",
+) -> None:
+    """Heatmap: rows = z_bin, cols = inventory (-Q..Q), color = delta (action)."""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib not installed, skip policy heatmap")
+        return
+    Q = config.Q
+    n_z_bins = config.n_z_bins
+    n_pos = 2 * Q + 1
+    mat = np.zeros((n_z_bins, n_pos), dtype=int)
+    for z_bin in range(n_z_bins):
+        for inv in range(-Q, Q + 1):
+            s = make_state_index_inv(z_bin, inv, n_z_bins, Q)
+            mat[z_bin, inv + Q] = action_to_delta(policy[s], Q)
+    fig, ax = plt.subplots(figsize=(n_pos * 0.7 + 2, 5))
+    v = max(2 * Q, 1)
+    im = ax.imshow(mat, aspect="auto", cmap="RdBu_r", vmin=-v, vmax=v)
+    ax.set_yticks(range(n_z_bins))
+    ax.set_yticklabels([SpreadState.z_bin_to_name(i, n_z_bins) for i in range(n_z_bins)], fontsize=8)
+    ax.set_xticks(range(n_pos))
+    ax.set_xticklabels([str(inv) for inv in range(-Q, Q + 1)])
+    ax.set_xlabel("Inventory")
+    ax.set_ylabel("Spread (z_bin)")
+    plt.colorbar(im, ax=ax, label="Δ (action)")
+    plt.title("Policy heatmap (Δ by z_bin × inventory)")
+    for i in range(n_z_bins):
+        for j in range(n_pos):
+            ax.text(j, i, mat[i, j], ha="center", va="center", fontsize=8)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=120)
+        print(f"Policy heatmap saved to {save_path}")
+    plt.show()
+
+
 # Q-Learning
 def _inv_range(Q: int):
     """Inventory range: integers from -Q to Q."""
