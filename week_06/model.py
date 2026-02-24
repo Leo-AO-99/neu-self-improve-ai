@@ -11,9 +11,31 @@ from typing import Any
 
 import torch
 
+HF_TOKEN: str | None = None  # e.g. "hf_xxxxxxxxxxxx"
+
+if HF_TOKEN:
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = HF_TOKEN
+    os.environ["HF_TOKEN"] = HF_TOKEN
+
 # Reduce vLLM log noise so accuracy is visible at end
 if "VLLM_LOGGING_LEVEL" not in os.environ:
     os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+
+# Llama 3.x chat format: applied in generate() so all baselines (CoT, RAG, etc.) get it automatically
+LLAMA_EOT = "<|eot_id|>"
+
+
+def is_llama(model_name_or_path: str) -> bool:
+    """True if model looks like Llama (e.g. meta-llama/Llama-3.2-8B). Used to wrap prompt in chat format."""
+    return "llama" in (model_name_or_path or "").lower()
+
+
+def wrap_prompt_for_llama_chat(prompt: str) -> str:
+    """Wrap prompt in Llama 3.x user/assistant format. Used by generate() when is_llama()."""
+    return (
+        "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
+        f"{prompt}{LLAMA_EOT}<|start_header_id|>assistant<|end_header_id|>\n\n"
+    )
 
 
 def extract_answer(text: str, answer_marker: str = "answer is") -> str | None:
@@ -76,7 +98,9 @@ class BaseModel:
         do_sample: bool = False,
         temperature: float = 0.0,
         top_p: float = 1.0,
-    ) -> str:
+        n: int = 1,
+    ) -> str | list[str]:
+        """Generate text. If n > 1, returns list of n samples; else single string."""
         raise NotImplementedError
 
     def answer(
@@ -126,25 +150,37 @@ class VLLMModel(BaseModel):
         do_sample: bool = False,
         temperature: float = 0.0,
         top_p: float = 1.0,
-    ) -> str:
+        n: int = 1,
+    ) -> str | list[str]:
         from vllm import SamplingParams
 
         if self._llm is None:
             self.load()
+        if is_llama(self.model_name_or_path):
+            prompt = wrap_prompt_for_llama_chat(prompt)
+            stop_tokens = list(stop_tokens) if stop_tokens else []
+            if LLAMA_EOT not in stop_tokens:
+                stop_tokens = stop_tokens + [LLAMA_EOT]
         stop = list(stop_tokens) if stop_tokens else []
+        n = max(1, int(n))
         sampling_params = SamplingParams(
             max_tokens=max_new_tokens,
             stop=stop if stop else None,
             temperature=temperature if do_sample else 0.0,
             top_p=top_p,
+            n=n,
         )
         outputs = self._llm.generate([prompt], sampling_params)
-        out = outputs[0].outputs[0].text
-        if stop_tokens:
-            for s in stop_tokens:
-                if s in out:
-                    out = out.split(s)[0]
-        return out.strip()
+        req_out = outputs[0].outputs
+        def clean_one(text: str) -> str:
+            if stop_tokens:
+                for s in stop_tokens:
+                    if s in text:
+                        text = text.split(s)[0]
+            return text.strip()
+        if n == 1:
+            return clean_one(req_out[0].text)
+        return [clean_one(o.text) for o in req_out]
 
 
 class HFModel(BaseModel):
@@ -174,9 +210,16 @@ class HFModel(BaseModel):
         do_sample: bool = False,
         temperature: float = 0.0,
         top_p: float = 1.0,
-    ) -> str:
+        n: int = 1,
+    ) -> str | list[str]:
         if self.model is None or self.tokenizer is None:
             self.load()
+        if is_llama(self.model_name_or_path):
+            prompt = wrap_prompt_for_llama_chat(prompt)
+            stop_tokens = list(stop_tokens) if stop_tokens else []
+            if LLAMA_EOT not in stop_tokens:
+                stop_tokens = stop_tokens + [LLAMA_EOT]
+        n = max(1, int(n))
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
@@ -189,24 +232,28 @@ class HFModel(BaseModel):
                 ids = self.tokenizer.encode(t, add_special_tokens=False)
                 if ids:
                     stop_ids.append(ids[0])
+        need_sample = do_sample or n > 1
         gen = self.model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
-            do_sample=do_sample,
-            temperature=temperature if do_sample else 1.0,
+            do_sample=need_sample,
+            temperature=temperature if need_sample else 1.0,
             top_p=top_p,
             pad_token_id=self.tokenizer.eos_token_id,
             eos_token_id=self.tokenizer.eos_token_id if not stop_ids else None,
+            num_return_sequences=n,
         )
-        out = self.tokenizer.decode(
-            gen[0][inputs["input_ids"].shape[1] :],
-            skip_special_tokens=True,
-        )
-        if stop_tokens:
-            for s in stop_tokens:
-                if s in out:
-                    out = out.split(s)[0]
-        return out.strip()
+        seq_len = inputs["input_ids"].shape[1]
+        def clean_one(seq):
+            out = self.tokenizer.decode(seq[seq_len:], skip_special_tokens=True)
+            if stop_tokens:
+                for s in stop_tokens:
+                    if s in out:
+                        out = out.split(s)[0]
+            return out.strip()
+        if n == 1:
+            return clean_one(gen[0])
+        return [clean_one(gen[i]) for i in range(n)]
 
 
 def get_model(

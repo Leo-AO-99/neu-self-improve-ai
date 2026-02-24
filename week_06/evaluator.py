@@ -209,3 +209,48 @@ def check_answers_equiv(pred: str | None, gold: str | None, dataset: str) -> boo
     if fn is None:
         return pred.strip().lower() == str(gold).strip().lower()
     return fn(pred, str(gold))
+
+
+def _equiv_for_dataset(dataset: str):
+    """Return a binary predicate (a, b) -> bool for answer equivalence."""
+    fn = CHECK_EQUIV.get(dataset.upper())
+    if fn is None:
+        return lambda a, b: (a or "").strip().lower() == (b or "").strip().lower()
+    return fn
+
+
+def find_most_confident_answer(
+    completions: list[str],
+    dataset: str,
+) -> tuple[str | None, str, int, float]:
+    """
+    Cluster completions by answer equivalence; return representative answer,
+    one completion, its index, and confidence (majority cluster size / K).
+    Used for MCTS-RAG reward (Algorithm 1 in paper).
+    """
+    if not completions:
+        return None, "", 0, 0.0
+    equiv = _equiv_for_dataset(dataset)
+    extract = EXTRACTORS.get(dataset.upper()) or isolate_answer
+    answers = [extract(c) for c in completions]
+    # Cluster by equivalence: same answer -> same cluster
+    clusters: list[list[int]] = []
+    for i, a in enumerate(answers):
+        placed = False
+        for cl in clusters:
+            if equiv(a, answers[cl[0]]):
+                cl.append(i)
+                placed = True
+                break
+        if not placed:
+            clusters.append([i])
+    if not clusters:
+        return None, "", 0, 0.0
+    majority = max(clusters, key=len)
+    n_star = len(majority)
+    k = len(completions)
+    confidence = n_star / k if k else 0.0
+    rep_idx = majority[0]
+    rep_answer = answers[rep_idx]
+    rep_completion = completions[rep_idx]
+    return rep_answer, rep_completion, rep_idx, confidence
