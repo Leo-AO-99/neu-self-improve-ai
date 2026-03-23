@@ -1,0 +1,61 @@
+{
+  "env_id": "Hopper-v4",
+  "best_config": {
+    "td1": {
+      "env_id": "Hopper-v4",
+      "algo": "td1",
+      "total_updates": 200,
+      "rollout_len": 128,
+      "num_envs": 4,
+      "policy_lr": 0.0003,
+      "value_lr": 0.001,
+      "gamma": 0.97,
+      "lam": 0.0,
+      "hidden_size": 128,
+      "value_coef": 0.5,
+      "entropy_coef": 0.0,
+      "max_grad_norm": 0.5,
+      "seed": 42,
+      "device": "cpu"
+    },
+    "mc": {
+      "env_id": "Hopper-v4",
+      "algo": "mc",
+      "total_updates": 200,
+      "rollout_len": 128,
+      "num_envs": 8,
+      "policy_lr": 0.0003,
+      "value_lr": 0.0005,
+      "gamma": 0.97,
+      "lam": 1.0,
+      "hidden_size": 128,
+      "value_coef": 0.5,
+      "entropy_coef": 0.0,
+      "max_grad_norm": 0.5,
+      "seed": 42,
+      "device": "cpu"
+    },
+    "gae": {
+      "env_id": "Hopper-v4",
+      "algo": "gae",
+      "total_updates": 200,
+      "rollout_len": 128,
+      "num_envs": 8,
+      "policy_lr": 0.0003,
+      "value_lr": 0.001,
+      "gamma": 0.97,
+      "lam": 0.99,
+      "hidden_size": 128,
+      "value_coef": 0.5,
+      "entropy_coef": 0.0,
+      "max_grad_norm": 0.5,
+      "seed": 42,
+      "device": "cpu"
+    }
+  },
+  "compare_score": {
+    "td1": 169.41036140441895,
+    "mc": 201.81973178863527,
+    "gae": 184.92597984313966
+  }
+}
